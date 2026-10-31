@@ -3,6 +3,25 @@
 3D segmentation of post-treatment adult gliomas on BraTS 2024 multi-parametric MRI
 (T1, T1-Gd, T2, FLAIR), built with PyTorch and MONAI.
 
+
+## Background
+
+This is a second, rebuilt version of a project I first worked on during my
+fourth semester. When I went back to it, I found problems that made its results
+unreliable:
+
+- the label mapping followed the BraTS 2021 convention (enhancing tumour = 4),
+  while in BraTS 2024 label 4 is the resection cavity and enhancing tissue is 3;
+
+- the train/validation split was done by scan, not by patient, although many
+  patients have several scans;
+  
+- there was no separate test set, and the model was very small.
+
+This version was written from scratch with these issues in mind: a patient-level
+split saved in the repository, an explicit BraTS 2024 label conversion with tests,
+and documentation of the data and every preprocessing step.
+
 ## Requirements
 
 - Linux (tested on <system/cluster>)
@@ -71,4 +90,3 @@ If you use this code with the BraTS 2024 data, please cite:
 - M. Correia de Verdier et al., "The 2024 Brain Tumor Segmentation (BraTS)
   Challenge: Glioma Segmentation on Post-treatment MRI", arXiv:2405.18368, 2024.
 
-<!-- TODO: verify the full list of required citations on the BraTS 2024 Synapse page -->

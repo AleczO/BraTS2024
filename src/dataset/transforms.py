@@ -58,26 +58,52 @@ class ConvertBraTS24Labelsd(MapTransform):
         return d
 
 
-def cached_transforms() -> Compose:
-    """Deterministic preprocessing, stored by PersistentDataset.
-
-    Images are cropped to the brain, z-score normalised per channel (non-zero
-    voxels) and stored as float16; labels stay single-channel uint8.
-    """
+def load_transforms() -> Compose:
+    """Load the four modalities and the label and bring them to RAS orientation."""
     keys = ["image", "label"]
     return Compose([
         LoadImaged(keys=keys),
         EnsureChannelFirstd(keys=keys),
         Orientationd(keys=keys, axcodes="RAS", labels=(("L", "R"), ("P", "A"), ("I", "S"))),
+    ])
+
+
+def crop_normalize_transforms() -> Compose:
+    """Crop to the brain, z-score each modality over non-zero voxels, shrink dtypes."""
+    keys = ["image", "label"]
+    return Compose([
         CropForegroundd(keys=keys, source_key="image", allow_smaller=True),
         NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
         CastToTyped(keys=keys, dtype=(np.float16, np.uint8)),
     ])
 
 
+def preprocess_transforms() -> Compose:
+    """Full preprocessing, as run once by `python scripts/preprocess.py`."""
+    return Compose(load_transforms().transforms + crop_normalize_transforms().transforms)
+
+
+class LoadProcessedCased(MapTransform):
+    """Load a preprocessed case (.npz written by preprocess.py) into image/label tensors."""
+
+    def __init__(self, path_key: str = "processed"):
+        super().__init__(keys=[path_key])
+        self.path_key = path_key
+
+    def __call__(self, data):
+        d = dict(data)
+        if self.path_key not in d:  # already loaded (e.g. in the notebook)
+            return d
+        with np.load(d[self.path_key]) as f:
+            d["image"] = torch.from_numpy(f["image"])
+            d["label"] = torch.from_numpy(f["label"])
+        return d
+
+
 def train_transforms(patch_size: tuple[int, int, int], num_samples: int, include_rc: bool) -> Compose:
     keys = ["image", "label"]
     return Compose([
+        LoadProcessedCased(),
         CastToTyped(keys="image", dtype=np.float32),
         SpatialPadd(keys=keys, spatial_size=patch_size),
         RandCropByPosNegLabeld(
@@ -97,6 +123,7 @@ def train_transforms(patch_size: tuple[int, int, int], num_samples: int, include
 def eval_transforms(include_rc: bool) -> Compose:
     """Full volumes, no augmentation (use sliding-window inference)."""
     return Compose([
+        LoadProcessedCased(),
         CastToTyped(keys="image", dtype=np.float32),
         ConvertBraTS24Labelsd(keys="label", include_rc=include_rc),
     ])
