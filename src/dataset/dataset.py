@@ -32,6 +32,10 @@ def load_processed_manifest() -> list[dict]:
         raise FileNotFoundError(f"{path} not found. Run `python -m src.dataset.preprocess` first.")
     return json.loads(path.read_text())
 
+def _loader_records(entries: list[dict]) -> list[dict]:
+    """Only what the transforms need; other manifest fields (crop box, affine,
+    label_values) differ in shape between cases and cannot be collated into a batch."""
+    return [{"case_id": e["case_id"], "processed": e["processed"]} for e in entries]
 
 def get_datasets(
     patch_size: tuple[int, int, int] = (128, 128, 128),
@@ -42,10 +46,12 @@ def get_datasets(
     manifest = load_processed_manifest()
     split = load_or_create_split(manifest)
     return {
-        "train": Dataset(records_for("train", manifest, split),
+        "train": Dataset(_loader_records(records_for("train", manifest, split)),
                          transform=train_transforms(patch_size, num_samples, include_rc)),
-        "val": Dataset(records_for("val", manifest, split), transform=eval_transforms(include_rc)),
-        "test": Dataset(records_for("test", manifest, split), transform=eval_transforms(include_rc)),
+        "val": Dataset(_loader_records(records_for("val", manifest, split)),
+                       transform=eval_transforms(include_rc)),
+        "test": Dataset(_loader_records(records_for("test", manifest, split)),
+                        transform=eval_transforms(include_rc)),
     }
 
 

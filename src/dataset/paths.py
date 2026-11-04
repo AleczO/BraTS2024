@@ -20,3 +20,8 @@ def get_processed_dir() -> Path:
 
 def get_split_path() -> Path:
     return REPO_ROOT / "splits" / "splits.json"
+
+
+def get_output_dir() -> Path:
+    """Training outputs (checkpoints, logs). Override with OUTPUT_DIR."""
+    return Path(os.getenv("OUTPUT_DIR", REPO_ROOT / "outputs")).resolve()
