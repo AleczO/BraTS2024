@@ -2,7 +2,7 @@
 
 import torch
 from monai.inferers import sliding_window_inference
-from monai.metrics import DiceMetric
+from monai.metrics import DiceMetric, compute_hausdorff_distance
 from torch import nn
 from tqdm import tqdm
 
@@ -69,3 +69,33 @@ def evaluate_dice(
     scores = {f"dice_{n}": float(v) for n, v in zip(names, per_region)}
     scores["dice_mean"] = float(sum(per_region) / len(per_region))
     return scores
+
+def add_netc(regions: torch.Tensor) -> torch.Tensor:
+    """Append NETC = TC and not ET as an extra channel: (C, ...) -> (C + 1, ...)."""
+    et, tc = regions[0].bool(), regions[1].bool()
+    return torch.cat([regions, (tc & ~et).float()[None]], dim=0)
+
+
+def case_metrics(masks: torch.Tensor, label: torch.Tensor, names: list[str]) -> dict:
+    """Per-region metrics for one case. masks, label: binary (C, X, Y, Z) on CPU.
+
+    Dice is NaN when the region is absent in the ground truth (skipped in means,
+    as in validation). HD95 (mm, 1 mm voxels) is NaN unless the region is present
+    in both the ground truth and the prediction; the voxel counts show which case
+    it is.
+    """
+    out = {}
+    for c, name in enumerate(names):
+        p, g = masks[c].bool(), label[c].bool()
+        n_pred, n_gt = int(p.sum()), int(g.sum())
+        tp = int((p & g).sum())
+        out[f"dice_{name}"] = 2 * tp / (n_pred + n_gt) if n_gt else float("nan")
+        if n_gt and n_pred:
+            out[f"hd95_{name}"] = float(compute_hausdorff_distance(
+                p[None, None].float(), g[None, None].float(), include_background=True, percentile=95,
+            ).item())
+        else:
+            out[f"hd95_{name}"] = float("nan")
+        out[f"gt_voxels_{name}"] = n_gt
+        out[f"pred_voxels_{name}"] = n_pred
+    return out
